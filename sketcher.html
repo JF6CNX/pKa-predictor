@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>JSME Sketcher</title>
+    <script type="text/javascript" src="https://peter-ertl.com/jsme/JSME_2020-06-11/jsme.nocache.js"></script>
+    <style>
+        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; }
+        #jsme_container { height: calc(100% - 50px); }
+        #button_container { height: 50px; display: flex; align-items: center; justify-content: center; }
+        button {
+            padding: 10px 20px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+    </style>
+    <script type="text/javascript">
+        function jsmeOnLoad() {
+            // JSMEアプレットを初期化
+            jsmeApplet = new JSApplet.JSME("jsme_container", "400px", "380px");
+        }
+
+        // FletにSMILESを送る関数
+        function sendSmilesToFlet() {
+            // 現在描画されている分子のSMILESを取得
+            var smiles = jsmeApplet.smiles();
+            if (smiles) {
+                // FletのWebViewにメッセージを送信
+                window.parent.postMessage(smiles);
+            } else {
+                alert("分子を描画してください。");
+            }
+        }
+    </script>
+</head>
+<body onload="jsmeOnLoad()">
+    <div id="jsme_container"></div>
+    <div id="button_container">
+        <button onclick="sendSmilesToFlet()">この構造で予測する</button>
+    </div>
+</body>
+</html>

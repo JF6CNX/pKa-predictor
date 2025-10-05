@@ -1,0 +1,15 @@
+{
+    "CO": {
+        "boiling_point": "64.7 \u00b0C (user)"
+    },
+    "history": [
+        {
+            "name": "2-acetyloxybenzoic acid",
+            "smiles": "CC(=O)OC1=CC=CC=C1C(=O)O"
+        },
+        {
+            "name": "methanol",
+            "smiles": "CO"
+        }
+    ]
+}
