@@ -106,44 +106,47 @@ def main(page: ft.Page):
         for syn in synonyms:
             if cas_pattern.match(syn): return syn
         return "N/A"
-
-    # --- 沸点データを取得する関数 (置き換え対象) ---
-def get_boiling_point(compound):
-    """
-    ユーザーデータ、PubChemの構造化プロパティ、NISTの順に沸点データを検索する。
-    """
-    user_data = load_user_data()
-    smiles = compound.connectivity_smiles
-    
-    # 1. ユーザー定義データを最優先
-    if smiles in user_data and "boiling_point" in user_data[smiles]: 
-        return user_data[smiles]["boiling_point"]
-
-    # 2. PubChemの構造化されたプロパティから取得
-    # PubChemのプロパティを辞書として取得
-    properties = compound.to_dict(properties=['Experimental_Properties']) # PubChemのプロパティを取得
-    
-    # Experimental_Boiling_Pointをチェック
-    exp_props = properties.get('Experimental_Properties', {})
-    if 'Boiling_Point' in exp_props:
-        # PubChemのデータはリストの場合があるため、最初の要素を取得
-        bp_data = exp_props['Boiling_Point'][0] if isinstance(exp_props['Boiling_Point'], list) else exp_props['Boiling_Point']
         
-        # 値と単位を抽出（bp_dataは辞書）
-        value = bp_data.get('Value')
-        unit = bp_data.get('Unit')
+    def resolve_identifier_to_smiles(identifier, id_type):
+        try:
+            namespace = 'name' if id_type == 'cas' else id_type
+            compounds = pcp.get_compounds(identifier, namespace)
+            if compounds:
+                return compounds, None
+        except Exception:
+            pass
         
-        if value and unit:
-            return f"{value} {unit} (PubChem)"
+        if id_type == 'name' or id_type == 'cas':
+            try:
+                url = f"https://cactus.nci.nih.gov/chemical/structure/{identifier}/smiles"
+                response = requests.get(url, timeout=5)
+                if response.status_code == 200 and response.text.strip():
+                    compounds = pcp.get_compounds(response.text.strip(), 'smiles')
+                    if compounds:
+                        return compounds, None
+            except Exception:
+                pass
+        
+        return [], f"'{identifier}' は見つかりませんでした。"
     
-    # 3. CAS番号を特定し、NISTからスクレイピング（フォールバック）
-    cas = find_cas_number(compound.synonyms)
-    nist_bp = scrape_nist_boiling_point(cas)
-    if nist_bp: 
-        return nist_bp
-    
-    # 4. 見つからなかった場合
-    return "N/A"
+    def get_boiling_point(compound):
+        user_data = load_user_data()
+        smiles = compound.connectivity_smiles
+        if smiles in user_data and "boiling_point" in user_data[smiles]: return user_data[smiles]["boiling_point"]
+        try:
+            bp = compound.boiling_point
+            if bp: return f"{bp} °C (PubChem)"
+        except (KeyError, AttributeError): pass
+        try:
+            for prop in compound.to_dict(properties=['synonyms']).get('synonyms', []):
+                if 'Boiling Point' in prop:
+                    value = prop.split(':')[-1].strip()
+                    if value: return value
+        except Exception: pass
+        cas = find_cas_number(compound.synonyms)
+        nist_bp = scrape_nist_boiling_point(cas)
+        if nist_bp: return nist_bp
+        return "N/A"
 
     def predict_pka(smiles: str):
         nonlocal current_png_data, current_predicted_pka
@@ -215,13 +218,13 @@ def get_boiling_point(compound):
         run_prediction(smiles)
 
     def run_prediction(smiles: str):
-        compound, error = pcp.get_compounds(smiles, 'smiles')
-        if not compound:
-            result_display.value = error or "SMILESから化合物を特定できませんでした。"
+        compounds = pcp.get_compounds(smiles, 'smiles')
+        if not compounds:
+            result_display.value = "SMILESから化合物を特定できませんでした。"
             details_display.value = ""; info_container.visible = False; mol_image.visible = False
             page.update(); return
         
-        compound = compound[0]
+        compound = compounds[0]
         add_to_history(compound)
         
         result_text, img_data, details, retrieved_smiles = predict_pka(smiles)
@@ -251,9 +254,8 @@ def get_boiling_point(compound):
             page.snack_bar = ft.SnackBar(ft.Text("沸点データを追加しました。"), duration=3000)
             page.snack_bar.open = True; page.update()
 
-    ### --- ここから handle_predict_click を大幅に修正 ---
     def handle_predict_click(e):
-        identifier = id_textbox.value
+        identifier = id_textbox.value.strip().upper() # 入力を大文字に統一
         id_type = id_type_dropdown.value
         
         if not identifier:
@@ -261,38 +263,22 @@ def get_boiling_point(compound):
             info_container.visible = False; mol_image.visible = False
             page.update(); return
 
-        # 1. PubChemで検索
-        compounds = []
-        try:
-            namespace = 'name' if id_type == 'cas' else id_type
-            compounds = pcp.get_compounds(identifier, namespace)
-        except Exception as ex:
-            result_display.value = f"検索中にエラーが発生しました: {ex}"; details_display.value = ""
-            info_container.visible = False; mol_image.visible = False
-            page.update(); return
-        
-        # 2. PubChemで見つからなければ、NIHサービスで再検索
-        if not compounds and (id_type == 'name' or id_type == 'cas'):
-            try:
-                url = f"https://cactus.nci.nih.gov/chemical/structure/{identifier}/smiles"
-                response = requests.get(url, timeout=5)
-                if response.status_code == 200 and response.text:
-                    run_prediction(response.text) # 見つかったSMILESで予測実行
-                    return
-            except Exception:
-                pass # エラーは無視して最終的な「見つかりません」メッセージへ
+        # --- DCM特別処理 ---
+        if identifier == "DCM":
+            run_prediction("C(Cl)Cl") # ジクロロメタンのSMILES
+            return
 
-        # 3. 結果を処理
-        if not compounds:
-            result_display.value = f"'{identifier}' は見つかりませんでした。"; details_display.value = ""
-            info_container.visible = False; mol_image.visible = False
+        compounds, error = resolve_identifier_to_smiles(identifier, id_type)
+
+        if error or not compounds:
+            result_display.value = error or f"'{identifier}' は見つかりませんでした。"
+            details_display.value = ""; info_container.visible = False; mol_image.visible = False
             page.update()
         elif len(compounds) == 1:
             run_prediction(compounds[0].connectivity_smiles)
         else:
-            # 複数候補が見つかった場合、ダイアログを表示
             candidate_dialog.content.controls.clear()
-            for comp in compounds[:10]: # 候補は最大10件まで
+            for comp in compounds[:10]:
                 candidate_dialog.content.controls.append(
                     ft.ListTile(
                         title=ft.Text(comp.iupac_name or "名称不明"),
@@ -304,7 +290,6 @@ def get_boiling_point(compound):
             page.dialog = candidate_dialog
             candidate_dialog.open = True
             page.update()
-    ### --- ここまで修正 ---
 
     def on_web_message(e):
         smiles = e.data
@@ -372,4 +357,6 @@ def get_boiling_point(compound):
     ], expand=True))
     update_history_view()
 
-ft.app(target=main)
+# --- アプリケーションの実行 ---
+if __name__ == "__main__":
+    ft.app(target=main)
