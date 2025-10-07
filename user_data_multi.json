@@ -1,0 +1,27 @@
+{
+    "HAL": {
+        "history": [
+            {
+                "name": "4-Dimethylaminopyridine",
+                "smiles": null
+            },
+            {
+                "name": "dichloromethane",
+                "smiles": "C(Cl)Cl"
+            },
+            {
+                "name": "N,N-dimethylpyridin-4-amine",
+                "smiles": "CN(C)C1=CC=NC=C1"
+            },
+            {
+                "name": "1,4-diazabicyclo[2.2.2]octane",
+                "smiles": "C1CN2CCN1CC2"
+            },
+            {
+                "name": "2-acetyloxybenzoic acid",
+                "smiles": "CC(=O)OC1=CC=CC=C1C(=O)O"
+            }
+        ],
+        "custom_data": {}
+    }
+}
